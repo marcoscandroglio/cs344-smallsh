@@ -14,11 +14,21 @@
 #define MAX_WORDS 512
 #endif
 
+#ifndef MAX_JOBS
+#define MAX_JOBS 20
+#endif
+
 char *words[MAX_WORDS];
 size_t wordsplit(char const *line);
 char * expand(char const *word);
-void redirection(char** arguments, int num_arguments);
 int exitStatus = 0;
+pid_t foregroundProcess = -1;
+
+// array for bacground process management
+int jobs_array[MAX_JOBS] = {0};
+
+int background_flag = 0;
+pid_t backgroundPID = -1;
 
 void catchSIGTSTP(int);
 
@@ -65,7 +75,41 @@ int main(int argc, char *argv[])
   for (;;) {
 prompt:;
     /* TODO: Manage background processes */
-    
+    // check for terminated background processes
+    // pid_t terminated_pid;
+    // int child_status;
+    int i;
+
+    for (i = 0; i < MAX_JOBS; i++) {
+      int childPid;
+      int childStatus;
+
+      if (jobs_array[i] != 0) {
+        childPid = waitpid(jobs_array[i], &childStatus, WNOHANG);
+
+        if (childPid > 0) {
+          jobs_array[i] = 0;
+
+          if (WIFEXITED(childStatus)) {
+            exitStatus = WEXITSTATUS(childStatus);
+            fprintf(stderr, "Child process %d done. Exit status %d.\n", childPid, exitStatus);
+            fflush(stdout);
+          } else if (WIFSIGNALED(childStatus)) {
+            int signal_num = WTERMSIG(childStatus);
+            fprintf(stderr, "Child process %d done. Signaled %d.\n", childPid, signal_num);
+            fflush(stdout);
+          }
+          errno = 0;
+         } else if (childPid == -1) {
+            perror("Issue in bg job check\n");
+        }
+
+      }
+      errno = 0;
+    }
+
+    // backgroundPID = -1;
+    background_flag = 0;
 
 
     /* TODO: prompt */
@@ -119,6 +163,10 @@ prompt:;
         fprintf(stderr, "Error allocating memory for expanded word: %s\n", exp_words[i]);
         exit(1);
       }
+      if ((strcmp(exp_word, "&") == 0) && (i + 1 == nwords)) {
+        background_flag = 1;
+        // printf("background flag set to 1\n");
+      }
       strcpy(exp_words[i], exp_word);
       free(exp_word);
     } 
@@ -151,8 +199,12 @@ prompt:;
         }
         continue;
       }
+
     }
     
+    if ((strcmp(exp_words[0], "exit") == 0) || (strcmp(exp_words[0], "cd") == 0)) {
+      goto prompt;
+    }
 
     pid_t pid = fork();
 
@@ -166,35 +218,6 @@ prompt:;
       sa_sigint.sa_handler = SIG_DFL;
       sigaction(SIGINT, &sa_sigint, NULL);
       
-      /*
-      // built-in command functionality
-      // change to exp_words[]?
-      if ((strcmp(exp_words[0], "exit") == 0) || (strcmp(exp_words[0], "cd") == 0)) {
-        if (strcmp(exp_words[0], "exit") == 0) {
-          if (nwords > 1) {
-            exit_status = atoi(exp_words[1]);
-          }
-          return exit_status;
-        } else if (strcmp(words[0], "cd") == 0) {
-          if (nwords > 1) {
-            if (chdir(exp_words[1]) != 0) {
-             perror("cd");
-              // add a goto?
-            }
-          } else {
-            const char *home_dir = getenv("HOME");
-            if (home_dir == NULL) {
-              fprintf(stderr, "cd: no home directory found.\n");
-            } else {
-              if (chdir(home_dir) != 0) {
-                perror("cd");
-              }
-            }
-          }
-          continue;
-        }
-      }
-      */
  
       // fprintf(stderr, "after fork\n");
       int input_fd = STDIN_FILENO;
@@ -246,6 +269,8 @@ prompt:;
             output_redirect_flag = 0;
           }
           // continue;
+        } else if (strcmp(exp_words[i], "&") == 0) {
+          continue;          
         } else {
           exec_args[exec_arg_counter] = exp_words[i];
           exec_arg_counter++;
@@ -288,21 +313,29 @@ prompt:;
         } 
         close(append_fd);
       }
-      // int num_arguments = sizeof(exec_args) / sizeof(exec_args[0]) - 1;
-
-      // printf("before redirection\n"); 
-      // redirection(exec_args, num_arguments);
-      // printf("after redirection\n"); 
-      // printf("before execvp()");
       execvp(exec_args[0], exec_args);
-      // fprintf(stderr, "after execvp\n");
-      // fprintf(stderr, "Error executing command");
-      // perror("Error executing command");
-      exit(1);
+      perror("Error executing command");
+      exit(2);
       // goto prompt;
     } else {
+      // int childExitMethod;
+      int waitpid_flag = 0;
+      if (background_flag) {
+        backgroundPID = pid;
+
+        int i;
+        for (i = 0; i < MAX_JOBS; i++) {
+          if (jobs_array[i] == 0) {
+            jobs_array[i] = backgroundPID;
+            break;
+          }
+        }
+        // printf("%d\n", backgroundPID);
+        waitpid_flag = WNOHANG;
+      }
+
       int childExitMethod;
-      waitpid(pid, &childExitMethod, 0);
+      pid_t terminatedChildPID = waitpid(pid, &childExitMethod, waitpid_flag);
 
       /*
       if (childPID == -1) {
@@ -310,17 +343,31 @@ prompt:;
         exit(1);
       }
       */
+      if (!background_flag) {
+        if (terminatedChildPID > 0) {
+          if (WIFEXITED(childExitMethod)) {
 
-      if (WIFEXITED(childExitMethod)) {
-        // printf("The process exited normally\n");
-        exitStatus = WEXITSTATUS(childExitMethod);
-        // printf("exit status was %d\n", exitStatus);
-        // continue;
-        // return exitStatus; // return the exit status to the parent process
-        // printf("Child process exited with status: %d\n", exitStatus);
-      } else {
-        printf("Child terminated by signal\n");
+            // printf("The process exited normally\n");
+            exitStatus = WEXITSTATUS(childExitMethod);
+            // printf("exit status was %d\n", exitStatus);
+            // continue;
+            // return exitStatus; // return the exit status to the parent process
+            // printf("Child process exited with status: %d\n", exitStatus);
+          } else if (WIFSIGNALED(childExitMethod)) {
+            exitStatus = WTERMSIG(childExitMethod) + 128;
+            // printf("Child terminated by signal\n");
+          }
+        }
       }
+
+      fflush(stdout);
+/*
+      pid_t completedPID = waitpid(-1, &exitStatus, WNOHANG);
+
+      while (completedPID > 0) {
+        completedPID = waitpid(-1, &exitStatus, WNOHANG);
+      }
+*/
       // fprintf(stderr, "printing an error\n");
     }
 
@@ -412,37 +459,6 @@ param_scan(char const *word, char const **start, char const **end) {
   return ret;
 }
 
-/*
-char
-param_scan(char const *word, char **start, char **end)
-{
-  static char *prev;
-  if (!word) word = prev;
-  
-  char ret = 0;
-  *start = NULL;
-  *end = NULL;
-  char *s = strchr(word, '$');
-  if (s) {
-    char *c = strchr("$!?", s[1]);
-    if (c) {
-      ret = *c;
-      *start = s;
-      *end = s + 2;
-    }
-    else if (s[1] == '{') {
-      char *e = strchr(s + 2, '}');
-      if (e) {
-        ret = '{';
-        *start = s;
-        *end = e + 1;
-      }
-    }
-  }
-  prev = *end;
-  return ret;
-}
-*/
 
 /* Simple string-builder function. Builds up a base
  * string by appending supplied strings/character ranges
@@ -489,7 +505,13 @@ expand(char const *word)
   build_str(pos, start);
   while (c) {
     if (c == '!') { 
-      build_str("", NULL);
+      if (backgroundPID == -1) {
+        build_str("", NULL);
+      } else {
+        char bgPID_str[10];
+        sprintf(bgPID_str, "%d", (int)backgroundPID);
+        build_str(bgPID_str, NULL);
+      }
     } else if (c == '$') {
       pid_t pid = getpid();
       char pid_str[10];
@@ -528,76 +550,3 @@ expand(char const *word)
 }
 
 
-void redirection(char** arguments, int num_args) {
-  int i;
-
-  for (i = 0; i < num_args; i++) {
-    if (strcmp(arguments[i], "<") == 0) {
-      // identify if there is a potential file name to open
-      if (i + 1 < num_args) {
-        int fd = open(arguments[i + 1], O_RDONLY);
-        if (fd == -1) {
-          fprintf(stderr, "Error opening file %S for input redirection\n", arguments[i + 1]);
-          exit(1);
-        }
-        // redirection to stdin
-        if (dup2(fd, STDIN_FILENO) == -1) {
-          fprintf(stderr, "Error redirecting input to file %S\n", arguments[i + 1]);
-          exit(1);         
-        }
-        close(fd);
-
-        memmove(&arguments[i], &arguments[i + 2], (num_args - i - 1) * sizeof(char*));
-        num_args -= 2;
-        i--;
-      } else {
-        fprintf(stderr, "Error: no file specified for input redirection\n");
-        exit(1);
-      }
-    } else if (strcmp(arguments[i], ">") == 0) {
-      // output redirection with truncation
-      if (i + 1 < num_args) {
-        int fd = open(arguments[i + 1], O_WRONLY | O_CREAT | O_TRUNC, 0777);
-        if (fd == -1) {
-          fprintf(stderr, "Error opening file %S for output redirection\n", arguments[i + 1]);
-          exit(1);
-        }
-        // redirect stdout
-        if (dup2(fd, STDOUT_FILENO) == -1) {
-          fprintf(stderr, "Error redirecting output to file %S\n", arguments[i + 1]);
-          exit(1);         
-        }
-        close(fd);
-
-        memmove(&arguments[i], &arguments[i + 2], (num_args - i - 1) * sizeof(char*));
-        num_args -= 2;
-        i--;
-      } else {
-        fprintf(stderr, "Error: no file specified for output redirection\n");
-        exit(1);
-      } 
-    } else if (strcmp(arguments[i], ">>") == 0) {
-      // output redirection with truncation
-      if (i + 1 < num_args) {
-        int fd = open(arguments[i + 1], O_WRONLY | O_CREAT | O_APPEND, 0777);
-        if (fd == -1) {
-          fprintf(stderr, "Error opening file %S for output redirection (appending)\n", arguments[i + 1]);
-          exit(1);
-        }
-        // redirect stdout
-        if (dup2(fd, STDOUT_FILENO) == -1) {
-          fprintf(stderr, "Error redirecting output to file %S\n", arguments[i + 1]);
-          exit(1);         
-        }
-        close(fd);
-
-        memmove(&arguments[i], &arguments[i + 2], (num_args - i - 1) * sizeof(char*));
-        num_args -= 2;
-        i--;
-      } else {
-        fprintf(stderr, "Error: no file specified for output redirection\n");
-        exit(1);
-      } 
-    }
-  }
-}
