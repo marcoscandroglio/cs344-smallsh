@@ -53,11 +53,13 @@ int main(int argc, char *argv[])
   
   // signal handlers
   // ignore ^C
+/*
   struct sigaction sa_sigint = {0};
   sa_sigint.sa_handler = SIG_IGN;
   sigfillset(&sa_sigint.sa_mask);
   sa_sigint.sa_flags = 0;
   sigaction(SIGINT, &sa_sigint, NULL);
+*/
  
   // ignore ^C
 /*  struct sigaction sa_sigtstp = {0};
@@ -94,7 +96,12 @@ prompt:;
             exitStatus = WEXITSTATUS(childStatus);
             fprintf(stderr, "Child process %d done. Exit status %d.\n", childPid, exitStatus);
             fflush(stdout);
-          } else if (WIFSIGNALED(childStatus)) {
+          }
+          if (WIFSTOPPED(childStatus)) {
+            kill(childPid, SIGCONT);
+            fprintf(stderr, "Child process %d stopped. Continuing.\n", childPid);
+          }
+          if (WIFSIGNALED(childStatus)) {
             int signal_num = WTERMSIG(childStatus);
             fprintf(stderr, "Child process %d done. Signaled %d.\n", childPid, signal_num);
             fflush(stdout);
@@ -115,8 +122,8 @@ prompt:;
     /* TODO: prompt */
     // int interactive_mode = isatty(STDIN_FILENO);
     if (input == stdin) {
-      signal(SIGINT, sigint_handler);
-      signal(SIGTSTP, SIG_IGN);
+      // signal(SIGINT, sigint_handler);
+      // signal(SIGTSTP, SIG_IGN);
       // if (interactive_mode) {
         char* prompt = getenv("PS1");
         if (prompt != NULL) {
@@ -144,6 +151,7 @@ prompt:;
     }
     
     size_t nwords = wordsplit(line);
+    if (nwords == 0) goto prompt;
 
     /*
     for (size_t i = 0; i < nwords; ++i) {
@@ -197,9 +205,9 @@ prompt:;
             }
           }
         }
-        continue;
+        // continue;
       }
-
+      // continue;
     }
     
     if ((strcmp(exp_words[0], "exit") == 0) || (strcmp(exp_words[0], "cd") == 0)) {
@@ -215,8 +223,8 @@ prompt:;
       break;
     } else if (pid == 0) {
 
-      sa_sigint.sa_handler = SIG_DFL;
-      sigaction(SIGINT, &sa_sigint, NULL);
+      // sa_sigint.sa_handler = SIG_DFL;
+      // sigaction(SIGINT, &sa_sigint, NULL);
       
  
       // fprintf(stderr, "after fork\n");
@@ -334,8 +342,8 @@ prompt:;
         waitpid_flag = WNOHANG;
       }
 
-      int childExitMethod;
-      pid_t terminatedChildPID = waitpid(pid, &childExitMethod, waitpid_flag);
+      // int childExitMethod;
+      // pid_t terminatedChildPID = waitpid(pid, &childExitMethod, waitpid_flag);
 
       /*
       if (childPID == -1) {
@@ -344,7 +352,10 @@ prompt:;
       }
       */
       if (!background_flag) {
-        if (terminatedChildPID > 0) {
+        int childExitMethod;
+        pid_t terminatedChildPID = waitpid(pid, &childExitMethod, waitpid_flag);
+
+       if (terminatedChildPID > 0) {
           if (WIFEXITED(childExitMethod)) {
 
             // printf("The process exited normally\n");
@@ -361,6 +372,7 @@ prompt:;
       }
 
       fflush(stdout);
+      goto prompt;
 /*
       pid_t completedPID = waitpid(-1, &exitStatus, WNOHANG);
 
