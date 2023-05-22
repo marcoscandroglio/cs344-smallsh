@@ -163,6 +163,9 @@ prompt:;
     size_t nwords = wordsplit(line);
     if (nwords == 0) goto prompt;
 
+    SIGINT_action.sa_handler = SIG_IGN;
+    sigaction(SIGINT, &SIGINT_action, NULL);
+ 
     /*
     for (size_t i = 0; i < nwords; ++i) {
       fprintf(stderr, "Word %zu: %s  -->  ", i, words[i]);
