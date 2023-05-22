@@ -15,7 +15,7 @@
 #endif
 
 #ifndef MAX_JOBS
-#define MAX_JOBS 20
+#define MAX_JOBS 500
 #endif
 
 char *words[MAX_WORDS];
@@ -30,34 +30,22 @@ int jobs_array[MAX_JOBS] = {0};
 int background_flag = 0;
 pid_t backgroundPID = -1;
 
-void catchSIGTSTP(int);
-
 void sigint_handler(int sig) {};
 void sigtstp_handler(int sig) {};
 
 int main(int argc, char *argv[])
 {
-/*
-  struct sigaction SIGINT_action = {0};
-  SIGINT_action.sa_handler = sigint_handler;
-  sigfillset(&SIGINT_action.sa_mask);
-  SIGINT_action.sa_flags = 0;
-  sigaction(SIGINT, &SIGINT_action, NULL);
-  sigaction(SIGTSTP, &SIGINT_action, NULL);
-*/
 
   struct sigaction new_sigint, old_sigint;
   new_sigint.sa_handler = sigint_handler;
   sigfillset(&new_sigint.sa_mask);
   new_sigint.sa_flags = 0;
   sigaction(SIGINT, &new_sigint, &old_sigint);
-  // sigaction(SIGTSTP, SIG_IGN, &old_sigint);
 
   struct sigaction new_sigtstp, old_sigtstp;
   new_sigtstp.sa_handler = SIG_IGN;
   sigfillset(&new_sigtstp.sa_mask);
   new_sigtstp.sa_flags = 0;
-  // sigaction(SIGINT, &new_sa, &old_sa);
   sigaction(SIGTSTP, &new_sigtstp, &old_sigtstp);
 
 
@@ -74,30 +62,7 @@ int main(int argc, char *argv[])
   char *line = NULL;
   size_t n = 0;
   char *exp_words[MAX_WORDS] = {0};
-  // int exitStatus = 0i;
-  
-  // signal handlers
-  // ignore ^C
-/*
-  struct sigaction sa_sigint = {0};
-  sa_sigint.sa_handler = SIG_IGN;
-  sigfillset(&sa_sigint.sa_mask);
-  sa_sigint.sa_flags = 0;
-  sigaction(SIGINT, &sa_sigint, NULL);
-*/
  
-  // ignore ^C
-/*  struct sigaction sa_sigtstp = {0};
-  sa_sigtstp.sa_handler = catchSIGTSTP;
-  sigfillset(&sa_sigtstp.sa_mask);
-  sa_sigtstp.sa_flags = 0;
-  sigaction(SIGTSTP, &sa_sigtstp, NULL); 
-
-*/
-  // signal handler for SIGINT
-  // signal(SIGINT, sigint_handler);
-  // ignore SIGTSTP
-  // signal(SIGTSTP, SIG_IGN);
 
   for (;;) {
 prompt:;
@@ -105,8 +70,6 @@ prompt:;
     errno = 0;
     /* TODO: Manage background processes */
     // check for terminated background processes
-    // pid_t terminated_pid;
-    // int child_status;
     int i;
 
     for (i = 0; i < MAX_JOBS; i++) {
@@ -142,21 +105,15 @@ prompt:;
       errno = 0;
     }
 
-    // backgroundPID = -1;
     background_flag = 0;
 
 
     /* TODO: prompt */
-    // int interactive_mode = isatty(STDIN_FILENO);
     if (input == stdin) {
-      // signal(SIGINT, sigint_handler);
-      // signal(SIGTSTP, SIG_IGN);
-      // if (interactive_mode) {
         char* prompt = getenv("PS1");
         if (prompt != NULL) {
           fprintf(stderr, "%s", prompt);
         }
-      // }
     }
 
     ssize_t line_len = getline(&line, &n, input);
@@ -165,11 +122,8 @@ prompt:;
       if (errno == EINTR) {
         clearerr(input);
         fprintf(stderr, "\n");
-        // errno = 0;
         continue;
       } else if (errno == 0) {
-        // err(1, "%s", input_fn);
-        // printf("end of file");
         break;
       } else {
         perror("getline error");
@@ -180,15 +134,8 @@ prompt:;
     size_t nwords = wordsplit(line);
     if (nwords == 0) goto prompt;
 
-    // SIGINT_action.sa_handler = SIG_IGN;
     signal(SIGINT, SIG_IGN);
  
-    /*
-    for (size_t i = 0; i < nwords; ++i) {
-      fprintf(stderr, "Word %zu: %s  -->  ", i, words[i]);
-    }
-    */
-
     // expand words
     for (size_t i = 0; i < nwords; ++i) {
       char *exp_word = expand(words[i]);
@@ -203,7 +150,6 @@ prompt:;
       }
       if ((strcmp(exp_word, "&") == 0) && (i + 1 == nwords)) {
         background_flag = 1;
-        // printf("background flag set to 1\n");
       }
       strcpy(exp_words[i], exp_word);
       free(exp_word);
@@ -211,10 +157,8 @@ prompt:;
     
     
     // built-in command functionality
-    // change to exp_words[]?
     if (nwords > 0) {
       if (strcmp(exp_words[0], "exit") == 0) {
-        // int exit_status;
         if (nwords > 1) {
           exitStatus = atoi(exp_words[1]);
         }
@@ -223,7 +167,6 @@ prompt:;
         if (nwords > 1) {
           if (chdir(exp_words[1]) != 0) {
             perror("cd");
-            // add a goto?
           }
         } else {
           const char *home_dir = getenv("HOME");
@@ -235,9 +178,7 @@ prompt:;
             }
           }
         }
-        // continue;
       }
-      // continue;
     }
     
     if ((strcmp(exp_words[0], "exit") == 0) || (strcmp(exp_words[0], "cd") == 0)) {
@@ -253,28 +194,9 @@ prompt:;
       break;
     } else if (pid == 0) {
       
-      // signal(SIGINT, SIG_IGN);
-      // signal(SIGTSTP, SIG_IGN);
-      // new_sigint.sa_handler = SIG_DFL;
       sigaction(SIGINT, &old_sigint, NULL);
-      // new_sigtstp.sa_handler = SIG_DFL;
       sigaction(SIGTSTP, &old_sigtstp, NULL);
 
-/*
-      struct sigaction SIGINT_action = {0};
-      SIGINT_action.sa_handler = SIG_DFL;
-      sigfillset(&SIGINT_action.sa_mask);
-      SIGINT_action.sa_flags = 0;
-      sigaction(SIGINT, &SIGINT_action, NULL);
-      sigaction(SIGTSTP, &SIGINT_action, NULL);
-*/
-
-
-      // sa_sigint.sa_handler = SIG_DFL;
-      // sigaction(SIGINT, &sa_sigint, NULL);
-      
- 
-      // fprintf(stderr, "after fork\n");
       int input_fd = STDIN_FILENO;
       int output_fd = STDOUT_FILENO;
       int append_fd = STDOUT_FILENO;
@@ -323,7 +245,6 @@ prompt:;
             append_redirect_flag = 1;
             output_redirect_flag = 0;
           }
-          // continue;
         } else if (strcmp(exp_words[i], "&") == 0) {
           continue;          
         } else {
@@ -332,7 +253,6 @@ prompt:;
         }
        
 
-        // exec_args[i] = exp_words[i];
       }
       exec_args[exec_arg_counter] = NULL;
 
@@ -344,7 +264,6 @@ prompt:;
         }
         close(input_fd);
       }
-      // fprintf(stderr, "before dup2\n");
       if (output_redirect_flag || append_redirect_flag) {
         int redirect_fd;
         if (output_redirect_flag) 
@@ -359,7 +278,6 @@ prompt:;
         } 
         close(output_fd);
       }
-      // fprintf(stderr, "after close\n");
       if (append_redirect_flag) {
         if (dup2(append_fd, STDOUT_FILENO) == -1) {
           perror("Failed to redirect output\n");
@@ -371,9 +289,7 @@ prompt:;
       execvp(exec_args[0], exec_args);
       perror("Error executing command");
       exit(2);
-      // goto prompt;
     } else {
-      // int childExitMethod;
       int waitpid_flag = 0;
       if (background_flag) {
         backgroundPID = pid;
@@ -385,36 +301,19 @@ prompt:;
             break;
           }
         }
-        // printf("%d\n", backgroundPID);
         waitpid_flag = WNOHANG;
       }
 
-      // int childExitMethod;
-      // pid_t terminatedChildPID = waitpid(pid, &childExitMethod, waitpid_flag);
-
-      /*
-      if (childPID == -1) {
-        perror("wait failed");
-        exit(1);
-      }
-      */
       if (!background_flag) {
         int childExitMethod;
         pid_t terminatedChildPID = waitpid(pid, &childExitMethod, waitpid_flag | WUNTRACED);
 
        if (terminatedChildPID > 0) {
           if (WIFEXITED(childExitMethod)) {
-
-            // printf("The process exited normally\n");
             exitStatus = WEXITSTATUS(childExitMethod);
-            // printf("exit status was %d\n", exitStatus);
-            // continue;
-            // return exitStatus; // return the exit status to the parent process
-            // printf("Child process exited with status: %d\n", exitStatus);
           } 
           if (WIFSIGNALED(childExitMethod)) {
             exitStatus = WTERMSIG(childExitMethod) + 128;
-            // printf("Child terminated by signal\n");
           }
           if (WIFSTOPPED(childExitMethod)) {
             kill(terminatedChildPID, SIGCONT);
@@ -425,28 +324,8 @@ prompt:;
       }
 
       fflush(stdout);
-      // sigaction(SIGINT, &old_sigint, NULL);
-      // sigaction(SIGTSTP, &old_sigtstp, NULL);
       goto prompt;
-/*
-      pid_t completedPID = waitpid(-1, &exitStatus, WNOHANG);
-
-      while (completedPID > 0) {
-        completedPID = waitpid(-1, &exitStatus, WNOHANG);
-      }
-*/
-      // fprintf(stderr, "printing an error\n");
     }
-
-    /*
-    for (size_t i = 0; i < nwords; ++i) {
-      fprintf(stderr, "Word %zu: %s  -->  ", i, words[i]);
-      char *exp_word = expand(words[i]);
-      free(words[i]);
-      words[i] = exp_word;
-      fprintf(stderr, "%s\n", words[i]);
-    }
-    */
   }
   free(line);
   return 0;
@@ -588,7 +467,6 @@ expand(char const *word)
       char exit_status_str[16];
       sprintf(exit_status_str, "%d", exitStatus);
       build_str(exit_status_str, NULL);
-      // build_str("<Placeholder>", NULL);
     } else if (c == '{') {
       const char *param_start = start + 2;
       const char *param_end = end - 1;
@@ -603,11 +481,6 @@ expand(char const *word)
       } else {
         build_str("", NULL);
       }
-
-
-      // build_str("<Parameter: ", NULL);
-      // build_str(start + 2, end - 1);
-      // build_str(">", NULL);
     }
     pos = end;
     c = param_scan(pos, &start, &end);
@@ -615,5 +488,4 @@ expand(char const *word)
   }
   return build_str(start, NULL);
 }
-
 
