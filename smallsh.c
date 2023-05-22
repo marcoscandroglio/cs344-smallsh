@@ -37,13 +37,29 @@ void sigtstp_handler(int sig) {};
 
 int main(int argc, char *argv[])
 {
-
+/*
   struct sigaction SIGINT_action = {0};
   SIGINT_action.sa_handler = sigint_handler;
   sigfillset(&SIGINT_action.sa_mask);
   SIGINT_action.sa_flags = 0;
   sigaction(SIGINT, &SIGINT_action, NULL);
   sigaction(SIGTSTP, &SIGINT_action, NULL);
+*/
+
+  struct sigaction new_sigint, old_sigint;
+  new_sigint.sa_handler = sigint_handler;
+  sigfillset(&new_sigint.sa_mask);
+  new_sigint.sa_flags = 0;
+  sigaction(SIGINT, &new_sigint, &old_sigint);
+  // sigaction(SIGTSTP, SIG_IGN, &old_sigint);
+
+  struct sigaction new_sigtstp, old_sigtstp;
+  new_sigtstp.sa_handler = SIG_IGN;
+  sigfillset(&new_sigtstp.sa_mask);
+  new_sigtstp.sa_flags = 0;
+  // sigaction(SIGINT, &new_sa, &old_sa);
+  sigaction(SIGTSTP, &new_sigtstp, &old_sigtstp);
+
 
   FILE *input = stdin;
   char *input_fn = "(stdin)";
@@ -85,6 +101,7 @@ int main(int argc, char *argv[])
 
   for (;;) {
 prompt:;
+
     errno = 0;
     /* TODO: Manage background processes */
     // check for terminated background processes
@@ -163,8 +180,8 @@ prompt:;
     size_t nwords = wordsplit(line);
     if (nwords == 0) goto prompt;
 
-    SIGINT_action.sa_handler = SIG_IGN;
-    sigaction(SIGINT, &SIGINT_action, NULL);
+    // SIGINT_action.sa_handler = SIG_IGN;
+    signal(SIGINT, SIG_IGN);
  
     /*
     for (size_t i = 0; i < nwords; ++i) {
@@ -238,9 +255,19 @@ prompt:;
       
       // signal(SIGINT, SIG_IGN);
       // signal(SIGTSTP, SIG_IGN);
+      // new_sigint.sa_handler = SIG_DFL;
+      sigaction(SIGINT, &old_sigint, NULL);
+      // new_sigtstp.sa_handler = SIG_DFL;
+      sigaction(SIGTSTP, &old_sigtstp, NULL);
+
+/*
+      struct sigaction SIGINT_action = {0};
       SIGINT_action.sa_handler = SIG_DFL;
+      sigfillset(&SIGINT_action.sa_mask);
+      SIGINT_action.sa_flags = 0;
       sigaction(SIGINT, &SIGINT_action, NULL);
       sigaction(SIGTSTP, &SIGINT_action, NULL);
+*/
 
 
       // sa_sigint.sa_handler = SIG_DFL;
@@ -398,6 +425,8 @@ prompt:;
       }
 
       fflush(stdout);
+      // sigaction(SIGINT, &old_sigint, NULL);
+      // sigaction(SIGTSTP, &old_sigtstp, NULL);
       goto prompt;
 /*
       pid_t completedPID = waitpid(-1, &exitStatus, WNOHANG);
