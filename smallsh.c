@@ -33,9 +33,18 @@ pid_t backgroundPID = -1;
 void catchSIGTSTP(int);
 
 void sigint_handler(int sig) {};
+void sigtstp_handler(int sig) {};
 
 int main(int argc, char *argv[])
 {
+
+  struct sigaction SIGINT_action = {0};
+  SIGINT_action.sa_handler = sigint_handler;
+  sigfillset(&SIGINT_action.sa_mask);
+  SIGINT_action.sa_flags = 0;
+  sigaction(SIGINT, &SIGINT_action, NULL);
+  sigaction(SIGTSTP, &SIGINT_action, NULL);
+
   FILE *input = stdin;
   char *input_fn = "(stdin)";
   if (argc == 2) {
@@ -76,6 +85,7 @@ int main(int argc, char *argv[])
 
   for (;;) {
 prompt:;
+    errno = 0;
     /* TODO: Manage background processes */
     // check for terminated background processes
     // pid_t terminated_pid;
@@ -87,7 +97,7 @@ prompt:;
       int childStatus;
 
       if (jobs_array[i] != 0) {
-        childPid = waitpid(jobs_array[i], &childStatus, WNOHANG);
+        childPid = waitpid(jobs_array[i], &childStatus, WNOHANG | WUNTRACED);
 
         if (childPid > 0) {
           jobs_array[i] = 0;
@@ -137,7 +147,7 @@ prompt:;
     if (line_len == -1) {
       if (errno == EINTR) {
         clearerr(input);
-        // fprintf(stderr, "\n");
+        fprintf(stderr, "\n");
         // errno = 0;
         continue;
       } else if (errno == 0) {
@@ -222,6 +232,13 @@ prompt:;
       exit(1);
       break;
     } else if (pid == 0) {
+      
+      // signal(SIGINT, SIG_IGN);
+      // signal(SIGTSTP, SIG_IGN);
+      SIGINT_action.sa_handler = SIG_DFL;
+      sigaction(SIGINT, &SIGINT_action, NULL);
+      sigaction(SIGTSTP, &SIGINT_action, NULL);
+
 
       // sa_sigint.sa_handler = SIG_DFL;
       // sigaction(SIGINT, &sa_sigint, NULL);
@@ -353,7 +370,7 @@ prompt:;
       */
       if (!background_flag) {
         int childExitMethod;
-        pid_t terminatedChildPID = waitpid(pid, &childExitMethod, waitpid_flag);
+        pid_t terminatedChildPID = waitpid(pid, &childExitMethod, waitpid_flag | WUNTRACED);
 
        if (terminatedChildPID > 0) {
           if (WIFEXITED(childExitMethod)) {
@@ -364,9 +381,15 @@ prompt:;
             // continue;
             // return exitStatus; // return the exit status to the parent process
             // printf("Child process exited with status: %d\n", exitStatus);
-          } else if (WIFSIGNALED(childExitMethod)) {
+          } 
+          if (WIFSIGNALED(childExitMethod)) {
             exitStatus = WTERMSIG(childExitMethod) + 128;
             // printf("Child terminated by signal\n");
+          }
+          if (WIFSTOPPED(childExitMethod)) {
+            kill(terminatedChildPID, SIGCONT);
+            backgroundPID = terminatedChildPID;
+            fprintf(stderr, "Child process %d stopped. Continuing.\n", terminatedChildPID);
           }
         }
       }
